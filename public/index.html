@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Interview Call</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      text-align: center;
+      font-family: Arial, sans-serif;
+      background: #534694;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      background-color: black;
+      color: white;
+      padding: 10px;
+    }
+
+    h3 {
+      color: #f8f5f5;
+      margin-top: 10px;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    li {
+      background: #fff;
+      padding: 10px;
+      margin: 5px auto;
+      width: 200px;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+    video {
+      width: 45%;
+      border: 3px solid #333;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      margin: 10px;
+      background-color: rgb(216, 205, 205);
+    }
+
+    video#remoteVideo {
+      display: none;
+    }
+
+    input[type="text"] {
+      width: 250px;
+      padding: 10px;
+      margin: 10px;
+      border: 2px solid #ccc;
+      border-radius: 5px;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      border: none;
+      border-radius: 5px;
+      background: #28a745;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #218838;
+    }
+
+    button:active {
+      background: #1e7e34;
+    }
+
+    .video-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .video-modal video {
+      width: 90%;
+      max-width: 1000px;
+      border: 3px solid white;
+      height: auto;
+      border-radius: 10px;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 20px;
+      right: 30px;
+      font-size: 30px;
+      color: white;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button#call {
+      background-color: #28a745;
+    }
+
+    button#hang {
+      background-color: rgb(209, 72, 72);
+    }
+
+    button#call:hover {
+      color: black;
+      box-shadow: 0px 0px 24px #28a745;
+    }
+
+    button#hang:hover {
+      color: black;
+      box-shadow: 0px 0px 24px rgb(209, 72, 72);
+    }
+
+    .icon-button {
+      background: transparent;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      margin: 10px;
+    }
+
+    .icon-button:hover {
+      color: #28a745;
+    }
+  </style>
+</head>
+<body>
+
+<header><h1>Video Call</h1></header>
+<h3>Online Users:</h3>
+<ul id="users"></ul>
+
+<video id="localVideo" autoplay playsinline muted></video>
+<video id="remoteVideo" autoplay playsinline></video>
+
+<br />
+<input type="text" id="peerId" placeholder="Enter User ID to Call" />
+<button id="call" onclick="startCall()">Call</button>
+<button id="hang" onclick="hangUp()">Hang Up</button>
+
+<!-- Toggle Buttons -->
+<button class="icon-button" id="micToggle" onclick="toggleMic()">🔇</button>
+<button class="icon-button" id="videoToggle" onclick="toggleVideo()">🎥</button>
+
+<!-- Enlarged Video Modal -->
+<div id="videoModal" class="video-modal">
+  <span class="close-btn" onclick="closeModal()">&times;</span>
+  <video id="enlargedVideo" controls autoplay></video>
+</div>
+
+<!-- Chat Popup Modal -->
+<div id="chatBox" style="display:none;position:fixed;bottom:10px;right:10px;background:white;border:2px solid black;padding:10px;border-radius:10px;max-width:300px;">
+  <h4>Chat</h4>
+  <div id="chatMessages" style="height:200px;overflow-y:auto;border:1px solid #ccc;padding:5px;margin-bottom:10px;"></div>
+  <input type="text" id="chatInput" placeholder="Type a message..." style="width:80%;" />
+  <button onclick="sendMessage()">Send</button>
+</div>
+
+<!-- Chat Toggle Button -->
+<button onclick="toggleChat()" style="position:fixed;bottom:10px;left:10px;">💬 Chat</button>
+
+
+<script>
+  const socket = io();
+  let localStream, peerConnection;
+  let remoteSocketId = null;
+  const servers = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+
+  window.onload = async function () {
+    await getMedia();
+  };
+
+  async function getMedia() {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      document.getElementById("localVideo").srcObject = localStream;
+    } catch (error) {
+      console.error("Error accessing media devices:", error);
+      alert("Could not access camera and microphone. Please allow permissions.");
+    }
+  }
+
+  async function startCall() {
+    remoteSocketId = document.getElementById("peerId").value;
+    if (!remoteSocketId) {
+      alert("Enter a valid User ID to call!");
+      return;
+    }
+
+    peerConnection = new RTCPeerConnection(servers);
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    peerConnection.onicecandidate = e => {
+      if (e.candidate) socket.emit("candidate", { candidate: e.candidate, to: remoteSocketId });
+    };
+
+    peerConnection.ontrack = e => {
+      const remoteVideo = document.getElementById("remoteVideo");
+      remoteVideo.srcObject = e.streams[0];
+      remoteVideo.style.display = "inline";
+    };
+
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit("call-user", { offer, to: remoteSocketId });
+  }
+
+  function hangUp() {
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
+    }
+    document.getElementById("remoteVideo").srcObject = null;
+    document.getElementById("remoteVideo").style.display = "none";
+  }
+
+  socket.on("incoming-call", async ({ offer, from }) => {
+    if (!confirm(`Incoming call from ${from}. Accept?`)) return;
+    remoteSocketId = from;
+
+    peerConnection = new RTCPeerConnection(servers);
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    peerConnection.onicecandidate = e => {
+      if (e.candidate) socket.emit("candidate", { candidate: e.candidate, to: remoteSocketId });
+    };
+
+    peerConnection.ontrack = e => {
+      const remoteVideo = document.getElementById("remoteVideo");
+      remoteVideo.srcObject = e.streams[0];
+      remoteVideo.style.display = "inline";
+    };
+
+    await peerConnection.setRemoteDescription(offer);
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit("answer-call", { answer, to: remoteSocketId });
+  });
+
+  socket.on("call-answered", (data) => {
+    peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+  });
+
+  socket.on("candidate", (data) => {
+    peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+  });
+
+  socket.on("update-user-list", (users) => {
+    let userList = document.getElementById("users");
+    userList.innerHTML = "";
+    users.forEach(user => {
+      let li = document.createElement("li");
+      li.innerText = user;
+      userList.appendChild(li);
+    });
+  });
+
+  function enlargeVideo(videoElement) {
+    let modal = document.getElementById("videoModal");
+    let enlargedVideo = document.getElementById("enlargedVideo");
+    enlargedVideo.srcObject = videoElement.srcObject;
+    modal.style.display = "flex";
+  }
+
+  function closeModal() {
+    let modal = document.getElementById("videoModal");
+    let enlargedVideo = document.getElementById("enlargedVideo");
+    enlargedVideo.srcObject = null;
+    modal.style.display = "none";
+  }
+
+  document.getElementById("localVideo").addEventListener("click", function () {
+    enlargeVideo(this);
+  });
+
+  document.getElementById("remoteVideo").addEventListener("click", function () {
+    enlargeVideo(this);
+  });
+
+  function toggleMic() {
+    const micTrack = localStream.getTracks().find(track => track.kind === "audio");
+    micTrack.enabled = !micTrack.enabled;
+    document.getElementById("micToggle").innerText = micTrack.enabled ? "🔇" : "🔊";
+  }
+
+  function toggleVideo() {
+    const videoTrack = localStream.getTracks().find(track => track.kind === "video");
+    videoTrack.enabled = !videoTrack.enabled;
+    document.getElementById("videoToggle").innerText = videoTrack.enabled ? "🎥" : "📷";
+  }
+
+  function toggleChat() {
+  const chatBox = document.getElementById("chatBox");
+  chatBox.style.display = chatBox.style.display === "none" ? "block" : "none";
+}
+
+function sendMessage() {
+  const input = document.getElementById("chatInput");
+  const message = input.value.trim();
+  if (!message || !remoteSocketId) return;
+  socket.emit("chat-message", { message, to: remoteSocketId });
+  appendMessage("You", message);
+  input.value = "";
+}
+
+function appendMessage(sender, message) {
+  const chatDiv = document.getElementById("chatMessages");
+  const msg = document.createElement("div");
+  msg.innerHTML = `<strong>${sender}:</strong> ${message}`;
+  chatDiv.appendChild(msg);
+  chatDiv.scrollTop = chatDiv.scrollHeight;
+}
+
+socket.on("chat-message", ({ message, from }) => {
+  appendMessage(from, message);
+});
+
+</script>
+
+</body>
+</html>
