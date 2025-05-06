@@ -1,63 +1,43 @@
 const express = require("express");
 const http = require("http");
-const socketIO = require("socket.io");
+const { Server } = require("socket.io");
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server);
+const io = new Server(server);
 
-const users = {}; // socket.id -> userId
-const sockets = {}; // userId -> socket.id
+app.use(express.static(path.join(__dirname, "public"))); // Serve frontend files
 
-app.use(express.static(__dirname + "/public")); // serve your HTML file from /public
+let users = {}; // Store connected users
 
 io.on("connection", (socket) => {
-  console.log("New connection:", socket.id);
+    console.log("User Connected:", socket.id);
+    users[socket.id] = socket.id;
 
-  // Register user ID when client connects
-  users[socket.id] = socket.id;
-  sockets[socket.id] = socket;
+    io.emit("update-user-list", Object.keys(users));
 
-  // Send updated user list
-  io.emit("update-user-list", Object.keys(sockets));
+    socket.on("call-user", (data) => {
+        console.log(`User ${socket.id} calling ${data.to}`);
+        io.to(data.to).emit("incoming-call", { offer: data.offer, from: socket.id });
+    });
 
-  socket.on("call-user", ({ offer, to }) => {
-    const targetSocket = sockets[to];
-    if (targetSocket) {
-      targetSocket.emit("incoming-call", { offer, from: socket.id });
-    }
-  });
+    socket.on("answer-call", (data) => {
+        console.log(`User ${socket.id} answered call from ${data.to}`);
+        io.to(data.to).emit("call-answered", { answer: data.answer, from: socket.id });
+    });
 
-  socket.on("answer-call", ({ answer, to }) => {
-    const targetSocket = sockets[to];
-    if (targetSocket) {
-      targetSocket.emit("call-answered", { answer });
-    }
-  });
+    socket.on("candidate", (data) => {
+        console.log(`ICE Candidate sent from ${socket.id} to ${data.to}`);
+        io.to(data.to).emit("candidate", { candidate: data.candidate });
+    });
 
-  socket.on("candidate", ({ candidate, to }) => {
-    const targetSocket = sockets[to];
-    if (targetSocket) {
-      targetSocket.emit("candidate", { candidate });
-    }
-  });
-
-  socket.on("chat-message", ({ message, to }) => {
-    const targetSocket = sockets[to];
-    if (targetSocket) {
-      targetSocket.emit("chat-message", { message, from: socket.id });
-    }
-  });
-
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-    delete sockets[socket.id];
-    delete users[socket.id];
-    io.emit("update-user-list", Object.keys(sockets));
-  });
+    socket.on("disconnect", () => {
+        console.log("User Disconnected:", socket.id);
+        delete users[socket.id];
+        io.emit("update-user-list", Object.keys(users));
+    });
+    
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+server.listen(3000, () => console.log("Server running on http://localhost:3000"));
