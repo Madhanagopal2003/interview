@@ -48,6 +48,10 @@
       background-color: rgb(216, 205, 205);
     }
 
+    video#localVideo {
+      transform: scaleX(-1); /* Mirror local camera view */
+    }
+
     video#remoteVideo {
       display: none;
     }
@@ -146,7 +150,7 @@
 </head>
 <body>
 
-<header><h1>Video Call</h1></header>
+<header><h1>Interview</h1></header>
 <h3>Online Users:</h3>
 <ul id="users"></ul>
 
@@ -310,31 +314,30 @@
   }
 
   function toggleChat() {
-  const chatBox = document.getElementById("chatBox");
-  chatBox.style.display = chatBox.style.display === "none" ? "block" : "none";
-}
+    const chatBox = document.getElementById("chatBox");
+    chatBox.style.display = chatBox.style.display === "none" ? "block" : "none";
+  }
 
-function sendMessage() {
-  const input = document.getElementById("chatInput");
-  const message = input.value.trim();
-  if (!message || !remoteSocketId) return;
-  socket.emit("chat-message", { message, to: remoteSocketId });
-  appendMessage("You", message);
-  input.value = "";
-}
+  function sendMessage() {
+    const input = document.getElementById("chatInput");
+    const message = input.value.trim();
+    if (!message || !remoteSocketId) return;
+    socket.emit("chat-message", { message, to: remoteSocketId });
+    appendMessage("You", message);
+    input.value = "";
+  }
 
-function appendMessage(sender, message) {
-  const chatDiv = document.getElementById("chatMessages");
-  const msg = document.createElement("div");
-  msg.innerHTML = `<strong>${sender}:</strong> ${message}`;
-  chatDiv.appendChild(msg);
-  chatDiv.scrollTop = chatDiv.scrollHeight;
-}
+  function appendMessage(sender, message) {
+    const chatDiv = document.getElementById("chatMessages");
+    const msg = document.createElement("div");
+    msg.innerHTML = `<strong>${sender}:</strong> ${message}`;
+    chatDiv.appendChild(msg);
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+  }
 
-socket.on("chat-message", ({ message, from }) => {
-  appendMessage(from, message);
-});
-
+  socket.on("chat-message", ({ message, from }) => {
+    appendMessage(from, message);
+  });
 </script>
 
 </body>
