@@ -1,43 +1,57 @@
+// server.js
 const express = require("express");
 const http = require("http");
-const { Server } = require("socket.io");
-const path = require("path");
+const socketIo = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = socketIo(server);
 
-app.use(express.static(path.join(__dirname, "public"))); // Serve frontend files
+const PORT = 3000;
 
-let users = {}; // Store connected users
+app.use(express.static(__dirname + "/public")); // HTML in /public folder
+
+let users = {};
 
 io.on("connection", (socket) => {
-    console.log("User Connected:", socket.id);
-    users[socket.id] = socket.id;
+  console.log("User connected:", socket.id);
 
+  users[socket.id] = socket.id;
+  io.emit("update-user-list", Object.keys(users));
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+    delete users[socket.id];
     io.emit("update-user-list", Object.keys(users));
+  });
 
-    socket.on("call-user", (data) => {
-        console.log(`User ${socket.id} calling ${data.to}`);
-        io.to(data.to).emit("incoming-call", { offer: data.offer, from: socket.id });
+  socket.on("call-user", (data) => {
+    io.to(data.to).emit("incoming-call", {
+      offer: data.offer,
+      from: socket.id,
     });
+  });
 
-    socket.on("answer-call", (data) => {
-        console.log(`User ${socket.id} answered call from ${data.to}`);
-        io.to(data.to).emit("call-answered", { answer: data.answer, from: socket.id });
+  socket.on("answer-call", (data) => {
+    io.to(data.to).emit("call-answered", {
+      answer: data.answer,
     });
+  });
 
-    socket.on("candidate", (data) => {
-        console.log(`ICE Candidate sent from ${socket.id} to ${data.to}`);
-        io.to(data.to).emit("candidate", { candidate: data.candidate });
+  socket.on("candidate", (data) => {
+    io.to(data.to).emit("candidate", {
+      candidate: data.candidate,
     });
+  });
 
-    socket.on("disconnect", () => {
-        console.log("User Disconnected:", socket.id);
-        delete users[socket.id];
-        io.emit("update-user-list", Object.keys(users));
+  socket.on("chat-message", (data) => {
+    io.to(data.to).emit("chat-message", {
+      message: data.message,
+      from: socket.id,
     });
-    
+  });
 });
 
-server.listen(3000, () => console.log("Server running on http://localhost:3000"));
+server.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
